@@ -6,12 +6,12 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'https://github.com/USERNAME/YOUR-REPO-NAME.git' # Đổi thành link repo github cá nhân của bạn
+    repoURL: 'https://github.com/Ninhnguyen1003/temp-labpractice.git' 
     targetRevision: HEAD
-    path: rbac        # Trỏ đến thư mục rbac ở ngoài root
+    path: rbac    
   destination:
     server: 'https://kubernetes.default.svc'
-    namespace: default # Thư mục rbac chứa cả tài nguyên Cluster-wide nên để ns mặc định này
+    namespace: default 
   syncPolicy:
     automated:
       prune: true
