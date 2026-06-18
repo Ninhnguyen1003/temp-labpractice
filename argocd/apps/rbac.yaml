@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'https://github.com/Ninhnguyen1003/temp-labpractice.git' 
+    repoURL: https://github.com/Ninhnguyen1003/temp-labpractice.git
     targetRevision: HEAD
     path: rbac    
   destination:
