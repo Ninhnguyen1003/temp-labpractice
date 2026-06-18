@@ -12,6 +12,8 @@ spec:
     repoURL: https://github.com/Ninhnguyen1003/temp-labpractice.git 
     path: app-api
     targetRevision: main
+    directory:
+      include: '{rollout.yaml,service.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: demo
