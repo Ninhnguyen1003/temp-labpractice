@@ -10,9 +10,10 @@ on:
       - '.github/workflows/build-push.yml'
   workflow_dispatch:
 
+# Tìm đoạn này ở đầu file .github/workflows/build-push.yml:
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/w10-api
+  IMAGE_NAME: ninhnguyen1003/w10-api 
 
 jobs:
   build-and-push:
@@ -106,7 +107,7 @@ jobs:
           # ĐÃ SỬA THÀNH BIẾN VIẾT THƯỜNG:
           sed -i "s|image: ghcr.io/.*/w10-api:.*|image: ${{ env.REGISTRY }}/${{ steps.string.outputs.IMAGE_LC }}:${{ steps.semver.outputs.version }}|g" app-api/rollout.yaml
           sed -i "s|value: \"v.*\"|value: \"v${{ steps.semver.outputs.version }}\"|g" app-api/rollout.yaml
-          
+
       - name: Commit and push version update
         run: |
           git config user.name "github-actions[bot]"
