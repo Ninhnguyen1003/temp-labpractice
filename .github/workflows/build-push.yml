@@ -93,6 +93,7 @@ jobs:
       - name: Sign Docker Image
         run: |
           echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          # ĐÃ SỬA THÀNH BIẾN VIẾT THƯỜNG:
           cosign sign --key cosign.key ${{ env.REGISTRY }}/${{ steps.string.outputs.IMAGE_LC }}:${{ steps.semver.outputs.version }}
         env:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -102,9 +103,10 @@ jobs:
       # ==========================================
       - name: Update rollout.yaml with new version
         run: |
+          # ĐÃ SỬA THÀNH BIẾN VIẾT THƯỜNG:
           sed -i "s|image: ghcr.io/.*/w10-api:.*|image: ${{ env.REGISTRY }}/${{ steps.string.outputs.IMAGE_LC }}:${{ steps.semver.outputs.version }}|g" app-api/rollout.yaml
           sed -i "s|value: \"v.*\"|value: \"v${{ steps.semver.outputs.version }}\"|g" app-api/rollout.yaml
-
+          
       - name: Commit and push version update
         run: |
           git config user.name "github-actions[bot]"
