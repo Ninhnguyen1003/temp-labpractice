@@ -1,0 +1,21 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8shostnetwork
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sHostNetwork
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties: {}
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8shostnetwork
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostNetwork
+          msg := "Cấm sử dụng hostNetwork trực tiếp của Node!"
+        }

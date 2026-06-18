@@ -10,12 +10,9 @@ spec:
     kinds:
       - apiGroups: [""]
         kinds: ["Pod"]
-  parameters:
-    # Logic: Chỉ cho phép các tag KHÔNG PHẢI latest (hoặc cấu hình tùy thuộc vào Template có sẵn trong cụm)
-    # Lưu ý: Điền đúng cấu hình template `K8sAllowedRepos` hoặc `K8sRequiredTags` của khóa học cung cấp.
 
 ---
-# Luật 2: Bắt buộc phải khai báo resources.limits (Tránh việc Pod ăn sạch RAM của Node)
+# Luật 2: Bắt buộc phải khai báo resources.limits
 apiVersion: constraints.gatekeeper.sh/v1beta1
 kind: K8sContainerLimits
 metadata:
@@ -31,9 +28,11 @@ spec:
     memory: "256Mi"
 
 ---
-# Luật 3: Cấm runAsUser: 0 (Không cho phép container chạy quyền Root để tránh leo thang đặc quyền)
+---
+---
+# Luật 3: Cấm chạy quyền Root (Map chính xác với template k8spspallowedusers)
 apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: K8sCompulsoryExecutionAsNonRoot
+kind: K8sPspAllowedUsers
 metadata:
   name: enforce-non-root
 spec:
@@ -42,9 +41,12 @@ spec:
     kinds:
       - apiGroups: [""]
         kinds: ["Pod"]
+  parameters:
+    runAsUser:
+      rule: "MustRunAsNonRoot"
 
 ---
-# Luật 4: Cấm hostNetwork: true (Không cho Pod chiếm dụng port/mạng trực tiếp của Node vật lý)
+# Luật 4: Cấm hostNetwork: true
 apiVersion: constraints.gatekeeper.sh/v1beta1
 kind: K8sHostNetwork
 metadata:
