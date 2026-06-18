@@ -36,10 +36,10 @@ spec:
             - name: 'null'
             - name: 'email-notifications'
               email_configs:
-              - to: 'vuongbachdoan@gmail.com'
-                from: 'vuongbachdoan@gmail.com'
+              - to: 'ninhnguyen130604@gmail.com'
+                from: 'ninhnguyen130604@gmail.com'
                 smarthost: 'smtp.gmail.com:587'
-                auth_username: 'vuongbachdoan@gmail.com'
+                auth_username: 'ninhnguyen130604@gmail.com'
                 auth_password_file: /etc/alertmanager/secrets/alertmanager-email/password
                 require_tls: true
                 headers:
