@@ -4,16 +4,16 @@ metadata:
   name: eso-config
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
   source:
     repoURL: https://github.com/Ninhnguyen1003/temp-labpractice.git
-    targetRevision: main
-    path: eso 
+    targetRevision: HEAD
+    path: eso
   destination:
     server: https://kubernetes.default.svc
-    namespace: demo 
+    namespace: demo
   syncPolicy:
     automated:
       prune: true
