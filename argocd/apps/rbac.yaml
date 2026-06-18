@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab1-1-rbac
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/USERNAME/YOUR-REPO-NAME.git' # Đổi thành link repo github cá nhân của bạn
+    targetRevision: HEAD
+    path: rbac        # Trỏ đến thư mục rbac ở ngoài root
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: default # Thư mục rbac chứa cả tài nguyên Cluster-wide nên để ns mặc định này
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
