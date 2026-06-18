@@ -20,6 +20,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write # Thêm quyền để hỗ trợ Cosign nếu cần
 
     steps:
       - name: Checkout repository
@@ -62,6 +63,33 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      # ==========================================
+      # BƯỚC THÊM MỚI 1: TRIVY SCAN CVE TRONG CI
+      # ==========================================
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.semver.outputs.version }}
+          severity: 'HIGH,CRITICAL'
+          exit-code: 1 # Đỏ pipeline lập tức nếu dính lỗ hổng nặng theo luật F-05
+
+      # ==========================================
+      # BƯỚC THÊM MỚI 2: COSIGN SIGN IMAGE ĐÃ PASS SCAN
+      # ==========================================
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@main
+
+      - name: Sign Docker Image
+        run: |
+          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          # Ký chính xác vào Tag định dạng Semantic Version dùng để deploy hạ tầng
+          cosign sign --key cosign.key ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.semver.outputs.version }}
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      # ==========================================
+      # TIẾP TỤC CÁC BƯỚC CŨ ĐỂ CẬP NHẬT GITOPS
+      # ==========================================
       - name: Update rollout.yaml with new version
         run: |
           sed -i "s|image: ghcr.io/.*/w10-api:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.semver.outputs.version }}|g" app-api/rollout.yaml
