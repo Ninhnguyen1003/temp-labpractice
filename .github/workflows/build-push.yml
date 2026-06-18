@@ -76,7 +76,8 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "chore: bump version to v${{ steps.semver.outputs.version }}"
-            git push
+            git pull --rebase origin main
+            git push origin main
           fi
 
       - name: Create git tag
