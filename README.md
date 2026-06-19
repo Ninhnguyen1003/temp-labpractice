@@ -1,279 +1,220 @@
-# Lab W10 Sáng — Secure & Operate: RBAC + Admission Policy
----
+# W10 - Progressive Delivery with Analysis
 
-## Lab 1.1 — Phân quyền RBAC (3 vai trò)
+GitOps setup for API deployment với Argo Rollouts + AnalysisTemplate.
 
-### Cấu trúc file trên Git
+## Concept
 
-| File | Mô tả |
-|------|-------|
-| `rbac/roles.yaml` | Định nghĩa Role / ClusterRole |
-| `rbac/rolebindings.yaml` | Gán quyền cho từng user |
+Deploy API với **canary strategy** và **automated analysis**:
+- Rollout: 10% → 50% → 100%
+- AnalysisTemplate query Prometheus để check success rate ≥ 95%
+- Auto rollback nếu analysis fail
+- AlertManager gửi email khi có SLO violation
 
-### Bảng phân quyền
+## Requirements
 
-| User | Loại | Phạm vi | Quyền |
-|------|------|---------|-------|
-| **Alice** | Role + RoleBinding | Namespace `demo` | `get`, `list`, `create`, `update`, `delete` trên `pods`, `deployments`, `services`, `rollouts` |
-| **Bob** | ClusterRole + ClusterRoleBinding | Toàn cluster | `get`, `list`, `watch`, `create`, `delete` trên `pods` |
-| **Carol** | ClusterRole + ClusterRoleBinding | Toàn cluster | `get`, `list`, `watch` trên mọi tài nguyên (read-only) |
+- Docker Desktop
+- kubectl
+- minikube
+- git
 
-### Kết quả nghiệm thu (`kubectl auth can-i`)
+## Structure
 
-**Test 1 — Alice có quyền CRUD trong namespace `demo`:**
+```
+w10/
+├── app-api/              # API Rollout manifests
+│   ├── rollout.yaml      # Argo Rollout với canary strategy
+│   ├── service.yaml      # Service expose API
+│   └── servicemonitor.yaml # Prometheus metrics scraper
+├── app-analysis/         # Analysis manifests
+│   └── analysis-template.yaml # Template phân tích success rate
+├── app-alert/            # Alert manifests
+│   ├── prometheus-rules.yaml # PrometheusRule cho SLO alerts
+│   ├── email-secret.yaml # Gmail password (NOT COMMITTED)
+│   └── README.md         # Alert setup guide
+├── app-common/           # Common resources
+│   └── demo-namespace.yaml # Namespace demo
+├── src/                  # Source code
+│   └── api/              # Flask API application
+├── argocd/
+│   ├── apps/             # ArgoCD Application manifests
+│   │   ├── app-api.yaml  # Deploy API Rollout
+│   │   ├── app-analysis.yaml # Deploy AnalysisTemplate
+│   │   ├── app-alert.yaml # Deploy PrometheusRule
+│   │   ├── app-common.yaml # Deploy common resources
+│   │   ├── k8s-prometheus.yaml # Prometheus + AlertManager
+│   │   └── k8s-rollout.yaml # Argo Rollouts controller
+│   └── root.yaml         # App of Apps pattern
+└── README.md
+```
+
+## Quick Start
+
+### 1. Setup Cluster
 ```bash
-kubectl auth can-i create deploy -n demo --as alice
-# yes
+minikube start -p w10 --driver=docker
+kubectl config use-context w10
 ```
 
-**Test 2 — Alice bị chặn tại namespace hệ thống `kube-system`:**
+### 2. Install ArgoCD
 ```bash
-kubectl auth can-i create deploy -n kube-system --as alice
-# no
+kubectl create ns argocd
+kubectl apply --server-side -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl -n argocd rollout status deploy/argocd-server
 ```
 
-**Test 3 — Bob có quyền xem Pods toàn cluster:**
+### 3. Access ArgoCD UI
 ```bash
-kubectl auth can-i get pods -A --as bob
-# yes
+# Port forward
+kubectl -n argocd port-forward svc/argocd-server 8080:443 &
+
+# Get password
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
-**Test 4 — Carol không được xóa tài nguyên hạ tầng:**
+### STEP PHẢI LÀM ĐỂ APP API CHẠY ĐƯỢC
+Step 1: Phải build image:
+- Dùng Github Action tại `.github/workflows/build-push.yml` để build image.
+- Hoặc build local và đẩy lên k8s
+
+Step 2: Phải đổi image name dòng `24` trong file `app-api/rollout.yaml` thành image các bạn đã build
+
+> Note 1: Fork repo thì sẽ không active được Github Action
+
+> Note 2: Nên clone repo template này về sau đó đẩy lên 1 repo của các bạn
+
+> Note 3: Phải đổi đúng image mà các bạn đã build nhé
+
+### 4. Deploy App of Apps
 ```bash
-kubectl auth can-i delete nodes --as carol
-# no
+kubectl apply -f argocd/root.yaml
 ```
 
-> ✅ **PASS** — Hệ thống phân quyền đúng phạm vi của từng user.
-
-![Evidence Lab 1.1 - Lệnh auth can-i thành công](image/lab11-auth-pass.png)
----
-
-## Lab 1.2 — Gatekeeper Admission Policy (4 Constraints)
-
-Sau khi cài đặt Gatekeeper Controller, áp dụng 4 Constraint lấy logic từ `gatekeeper-library`.
-
-### Luật 1 — Cấm image tag `:latest`
-
+### 5. Setup Email Alert
 ```bash
-kubectl apply -f test-latest-pod.yaml -n demo
+# Follow instructions in app-alert/README.md
+cp app-alert/email-secret.yaml.example app-alert/email-secret.yaml
+kubectl apply -f app-alert/email-secret.yaml
 ```
 
-```
-Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
-[container-image-must-not-use-latest] Image "ghcr.io/ninhnguyen1003/w10-api:latest" uses an unallowed tag (:latest)
-```
+## Components
 
-### Luật 2 — Bắt buộc khai báo `resources.limits`
+### Core
+- **Argo Rollouts**: Progressive delivery controller
+- **Prometheus Stack**: Metrics collection + AlertManager
+- **API**: Flask application với metrics endpoint
 
+### GitOps Applications
+- `app-api`: API Rollout với canary strategy
+- `app-analysis`: AnalysisTemplate cho automated validation
+- `app-alert`: PrometheusRule cho runtime alerting
+- `app-common`: Shared resources (namespace)
+- `k8s-prometheus`: Monitoring stack
+- `k8s-rollout`: Argo Rollouts controller
+
+## Verify Deployment
+
+### Check Rollout Status
 ```bash
-kubectl apply -f test-no-limits-pod.yaml -n demo
+# Watch rollout progress
+kubectl get rollout api -n demo -w
+
+# Check current state
+kubectl get rollout api -n demo
+
+# Check pods
+kubectl get pods -n demo -l app=api
 ```
 
-```
-Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
-[container-must-have-limits] Container "api" does not have resource limits defined.
-```
-
-### Luật 3 — Cấm chạy container dưới quyền root (`runAsUser: 0`)
-
+### Check AnalysisRun
 ```bash
-kubectl apply -f test-root-pod.yaml -n demo
+# List analysis runs
+kubectl get analysisrun -n demo
+
+# Watch latest analysis
+kubectl get analysisrun -n demo --sort-by=.metadata.creationTimestamp | tail -1
+
+# Describe for detailed metrics
+kubectl describe analysisrun -n demo <name>
 ```
 
-```
-Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
-[containers-must-not-run-as-root] Container "api" is attempting to run as root (runAsUser: 0)
-```
-
-### Luật 4 — Cấm chiếm dụng mạng host (`hostNetwork: true`)
-
+### Query Prometheus Metrics
 ```bash
-kubectl apply -f test-hostnetwork-pod.yaml -n demo
+# Success rate metric
+kubectl run test-query --image=curlimages/curl:latest --rm -i --restart=Never -n monitoring -- \
+  curl -s 'http://kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/query?query=api:success_rate:5m'
 ```
 
-```
-Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
-[no-host-network] Pod "api" is not allowed to use hostNetwork.
-```
+## Test Scenarios (GitOps)
 
-### Happy Path — Deploy manifest hợp lệ
-
-Manifest chuẩn (pinned version `v0.0.1` + có limits + không chạy root):
-
+### Test 1: Successful Deployment (Success Rate ≥ 90%)
 ```bash
-kubectl apply -f clean-rollout.yaml -n demo
-# rollout.argoproj.io/api created
+# Edit rollout to deploy with no errors
+nano app-api/rollout.yaml
+# Set: ERROR_RATE: "0"
+
+git add app-api/rollout.yaml
+git commit -m "test: deploy with 0% error rate"
+git push origin main
+
+# Watch AnalysisRun succeed
+kubectl get analysisrun -n demo -w
 ```
 
-> ✅ **PASS** — Webhook chặn 100% manifest cấu hình sai quy chuẩn an toàn.
-
-![Evidence Lab 1.2 - Gatekeeper chặn tag latest](image/Gatekeeper-chan-tag-latest.png)
----
-
-## Lab 1.3 — Custom Policy (Rego tự viết)
-
-**Đề bài:** Bắt buộc mọi Deployment phải có label `owner`.
-
-### ConstraintTemplate
-
-```yaml
-apiVersion: templates.gatekeeper.sh/v1
-kind: ConstraintTemplate
-metadata:
-  name: k8srequiredlabels
-spec:
-  crd:
-    spec:
-      names:
-        kind: K8sRequiredLabels
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package k8srequiredlabels
-        violation [{"msg": msg}] {
-          provided := {l | input.review.object.metadata.labels[l]}
-          required := {l | l := input.parameters.labels[_]}
-          missing := required - provided
-          count(missing) > 0
-          msg := sprintf("Thiếu label bắt buộc: %v", [missing])
-        }
-```
-
-### Constraint
-
-```yaml
-apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: K8sRequiredLabels
-metadata:
-  name: deployment-must-have-owner
-spec:
-  enforcementAction: deny
-  match:
-    kinds:
-      - apiGroups: ["apps"]
-        kinds: ["Deployment"]
-  parameters:
-    labels: ["owner"]
-```
-
-### Kết quả nghiệm thu
-
-**Deploy Deployment thiếu label `owner` → bị từ chối:**
+### Test 2: Failed Deployment (Success Rate < 90%)
 ```bash
-kubectl apply -f deploy-no-owner.yaml -n demo
-```
-```
-Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
-Thiếu label bắt buộc: {"owner"}
+# Edit rollout to deploy with 15% error rate
+nano app-api/rollout.yaml
+# Set: ERROR_RATE: "0.15"
+
+git add app-api/rollout.yaml
+git commit -m "test: deploy with 15% error rate (should fail)"
+git push origin main
+
+# Watch AnalysisRun fail and auto rollback
+kubectl get analysisrun -n demo -w
+kubectl get rollout api -n demo
 ```
 
-**Deploy Deployment có label `owner: team-api` → thành công:**
+### Test 3: Trigger SLO Alert Email
 ```bash
-kubectl apply -f deploy-with-owner.yaml -n demo
-# deployment.apps/api-deployment created
+# Edit rollout to set 10% error rate (triggers alert, but passes canary)
+nano app-api/rollout.yaml
+# Set: ERROR_RATE: "0.10"
+
+git add app-api/rollout.yaml
+git commit -m "test: deploy with 10% error rate (90% success)"
+git push origin main
+
+# Canary passes (≥90%) but SLO alert fires (below 95%)
+# Wait 2-3 minutes, then check email inbox
 ```
 
-> ✅ **PASS** — Custom webhook kiểm soát nhãn vận hành hoạt động đúng.
 
----
+## Configuration Reference
+
+### Sync Waves
+ArgoCD applications deploy in order:
+- Wave -1: `app-common` (namespace)
+- Wave 0: `k8s-prometheus`, `k8s-rollout` (infrastructure)
+- Wave 1: `app-analysis`, `app-alert` (configuration)
+- Wave 2: `app-api` (application)
+
+## Cleanup
 
 ```bash
-kubectl get pods -n demo
-```
-![lab1.3_gitops_policy_code](image/lab1.3_gitops_policy_code.png)
+# Delete ArgoCD applications
+kubectl delete -f argocd/root.yaml
 
-## Lab 2.1 — Khởi tạo hạ tầng và cấu hình Pipeline CI/CD
- 
-**Mục tiêu:** Cấu hình cụm Minikube, thiết lập ArgoCD và xây dựng GitHub Actions tự động hóa quy trình Build/Sign Image bằng Cosign.
- 
-### Task 1 — Khởi tạo hạ tầng local (Minikube & ArgoCD)
- 
-Khởi chạy cụm Minikube và cài đặt ArgoCD Core để quản lý GitOps.
- 
-```powershell
-kubectl get pods -n argocd
+# Wait for resources to be cleaned up
+kubectl get all -n demo
+kubectl get all -n monitoring
+
+# Delete ArgoCD
+kubectl delete ns argocd
+
+# Stop minikube
+minikube stop -p w10
+minikube delete -p w10
 ```
- 
-**Kết quả:** Toàn bộ Pod cấu phần ArgoCD (Application Controller, Server, Repo Server) đều ở trạng thái `Running (1/1 READY)`.
- 
-![Terminal hiển thị kết quả lệnh](image/healthy1.png)(![bổ sung](image/healthy2.png))
- 
----
- 
-### Task 2 — Cấu hình GitHub Actions CI & ký số Cosign
- 
-Workflow tự động kích hoạt khi có commit mới lên nhánh `main`, thực hiện theo thứ tự:
- 
-1. Lint code
-2. Build Docker Image
-3. Push lên GitHub Container Registry (GHCR)
-4. Ký số bằng Cosign với Private Key
-**Kết quả:**
-- Pipeline GitHub Actions chạy thành công hoàn toàn (xanh lá).
-- Image phiên bản `0.0.4` được đẩy lên GitHub Packages thành công.
-- Log bước Cosign xác nhận: `Pushing signature to: ghcr.io/ninhnguyen1003/w10-api:sha256-...sig`
-![Screenshot 2](image/thanh-cong.png)
- 
----
- 
-## Lab 2.2 — Triển khai GitOps và khắc phục sự cố Canary Rollout
- 
-**Mục tiêu:** Triển khai Web API theo chiến lược Canary qua ArgoCD, áp dụng `ClusterImagePolicy` và xử lý các xung đột vận hành thực tế.
- 
-### Task 1 — Khắc phục lỗi Custom Resource Definitions (CRDs)
- 
-Cài đặt thủ công CRD cho Sigstore Policy Controller và Argo Rollouts để Minikube nhận diện được các loại tài nguyên tùy biến.
- 
-```powershell
-kubectl apply -f .\sigstore-crd.yaml
-kubectl apply -f app-analysis/ -n demo
-```
- 
-**Kết quả:** Khắc phục triệt để lỗi `no matches for kind "ClusterImagePolicy"`. Hệ thống ghi nhận thành công cấu hình kiểm tra chữ ký số và khuôn mẫu đánh giá chỉ số `success-rate`.
- 
----
- 
-### Task 2 — Khắc phục lỗi tên Image và đồng bộ ArgoCD
- 
-Phát hiện lỗi case-sensitivity của Kubernetes: đường dẫn Image chứa chữ hoa (`ghcr.io/Ninhnguyen1003/...`) bị từ chối. Sửa thành chữ thường hoàn toàn `ghcr.io/ninhnguyen1003/w10-api:0.0.4` rồi force push để đồng bộ Git với cluster.
- 
-```powershell
-kubectl get pod -n demo
-```
- 
-**Kết quả:** Cluster chấp nhận Image sau khi qua màng lọc kiểm tra chữ ký Cosign. Pod `api-857554c7d-nwgbv` thoát khỏi trạng thái lỗi và khởi chạy thành công.
- 
----
- 
-### Task 3 — Bypass Prometheus & nghiệm thu Canary Rollout
- 
-Do môi trường Minikube local thiếu Prometheus (`lookup ... no such host`), tiến trình Canary bị kẹt ở trạng thái `Degraded`. Thực hiện `kubectl patch` để giải phóng các bước kiểm tra tự động và ép Promote an toàn cho Image `0.0.4`.
- 
-```powershell
-kubectl get applications -n argocd
-```
- 
-**Kết quả:** Trên ArgoCD Web UI, cả hai ứng dụng `api` và `cluster-policies` đạt trạng thái tối ưu:
-- **SYNC STATUS:** `Synced`
-- **HEALTH STATUS:** `Healthy`
-Các Pod lỗi cũ được dọn dẹp sạch, ứng dụng chạy ổn định trên phiên bản bảo mật mới nhất.
- 
-![Screenshot 3](image/healthy2.png)
- 
----
- 
-### Task 4 — Chuẩn hóa tài liệu vận hành (Runbooks & ADR)
- 
-Xây dựng thư mục `runbooks/` trong mã nguồn dự án để lưu trữ cẩm nang xử lý sự cố lâu dài.
- 
-**Kết quả:** Khởi tạo thành công 3 tài liệu Markdown:
- 
-| File | Nội dung |
-|------|---------|
-| `ADR-001-BYPASS-PROMETHEUS-METRICS.md` | Ghi nhận quyết định kiến trúc tắt kiểm tra chỉ số tự động trên local |
-| `RB-01-API-TROUBLESHOOTING.md` | Hướng dẫn gỡ lỗi viết hoa tên Image Registry |
-| `RB-02-ROLLOUT-CANARY-FAIL.md` | Quy trình xử lý khi Canary bị hủy do mất kết nối Prometheus |
- 
-![Cấu trúc thư mục](image/layout-folder.png)
----
